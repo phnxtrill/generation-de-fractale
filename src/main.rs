@@ -76,7 +76,7 @@ fn draw_rect(img: &mut RgbImage, rect: Rect, color: Rgb<u8>, view: &Viewport) {
 }
 
 // ============================
-// FRACTALE (AVEC CULLING VISIBILITÉ)
+// FRACTALE 
 // ============================
 
 fn generate_cantor(
@@ -165,9 +165,8 @@ fn main() {
     let mut target_zoom = zoom; // zoom cible pour le lissage
 
     let base_iter: i32 = 4;
-    let max_iter: i32 = 14;
-    let mut iterations: u32 = 4;
-
+    let max_iter: i32 = 50;
+    let mut iterations: u32;
     let mut window = Window::new(
         "Carré de Cantor - Fractale Temps Réel",
         width,
@@ -192,8 +191,8 @@ fn main() {
         zoom += (target_zoom - zoom) * 0.15;
 
         // Sécurité anti valeurs extrêmes
-        zoom = zoom.clamp(0.2, 100000.0);
-        target_zoom = target_zoom.clamp(0.2, 100000.0);
+        zoom = zoom.clamp(0.2, 99999999999999999999999999.0);
+        target_zoom = target_zoom.clamp(0.2, 99999999999999999999999999.0);
 
 
         // Déplacement de la caméra au clavier
