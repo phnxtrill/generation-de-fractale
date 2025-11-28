@@ -2,7 +2,10 @@ use image::{Rgb, RgbImage};
 use minifb::{Key, Window, WindowOptions};
 use std::time::Duration;
 
-// Carré élémentaire du Cantor exprimé dans l'espace normalisé [0, 1].
+// ============================
+// STRUCTURES
+// ============================
+
 #[derive(Clone, Copy)]
 struct Rect {
     x: f64,
@@ -10,7 +13,6 @@ struct Rect {
     size: f64,
 }
 
-// Viewport décrit la fenêtre d'observation (coordonnées normalisées -> pixels).
 struct Viewport {
     vx: f64,
     vy: f64,
@@ -20,12 +22,11 @@ struct Viewport {
 }
 
 impl Viewport {
-    fn new(width: u32, height: u32, zoom: f64) -> Self {
+    fn new(width: u32, height: u32, zoom: f64, cx: f64, cy: f64) -> Self {
         let view_size = 1.0 / zoom;
 
-        // ✅ Zoom vers le coin haut-gauche
-        let vx = 0.0;
-        let vy = 0.0;
+        let vx = cx - view_size / 2.0;
+        let vy = cy - view_size / 2.0;
 
         Self {
             vx,
@@ -45,7 +46,10 @@ impl Viewport {
     }
 }
 
-// Remplit un rectangle projeté dans l'image
+// ============================
+// DESSIN
+// ============================
+
 fn draw_rect(img: &mut RgbImage, rect: Rect, color: Rgb<u8>, view: &Viewport) {
     let img_w = img.width() as i32;
     let img_h = img.height() as i32;
@@ -71,35 +75,38 @@ fn draw_rect(img: &mut RgbImage, rect: Rect, color: Rgb<u8>, view: &Viewport) {
     }
 }
 
-// Génère récursivement les sous-carrés du Cantor
+// ============================
+// FRACTALE (AVEC CULLING VISIBILITÉ)
+// ============================
+
 fn generate_cantor(
     img: &mut RgbImage,
     rect: Rect,
     iter: u32,
-    max_iter: u32,
+    _max_iter: u32, // plus utilisé → underscore
     view: &Viewport,
 ) {
-    if rect.size <= 0.0 {
+    // Culling hors écran (optimisation)
+    if rect.x + rect.size < view.vx
+        || rect.x > view.vx + view.view_size
+        || rect.y + rect.size < view.vy
+        || rect.y > view.vy + view.view_size
+    {
         return;
     }
 
     let projected_size = (rect.size / view.view_size) * view.width;
+
+    // Couleur des carrés
+    let color = Rgb([80, 200, 255]);
+
+    // Condition d'arrêt
     if iter == 0 || projected_size < 1.0 {
-        let ratio = iter as f64 / max_iter as f64;
-
-        let r = (50.0 + 205.0 * ratio) as u8;
-        let g = (80.0 + 120.0 * (1.0 - ratio)) as u8;
-        let b = (180.0 + 50.0 * ratio) as u8;
-
-        let color = Rgb([r, g, b]);
         draw_rect(img, rect, color, view);
         return;
     }
 
     let s = rect.size / 3.0;
-    if s <= 0.0 {
-        return;
-    }
 
     let offsets = [(0.0, 0.0), (2.0, 0.0), (0.0, 2.0), (2.0, 2.0)];
     for (ox, oy) in offsets {
@@ -108,20 +115,31 @@ fn generate_cantor(
             y: rect.y + oy * s,
             size: s,
         };
-        generate_cantor(img, new_rect, iter - 1, max_iter, view);
+        generate_cantor(img, new_rect, iter - 1, iter, view);
     }
 }
 
-// Fabrique une image correspondant à un zoom donné
-fn render_frame(width: u32, height: u32, iterations: u32, zoom: f64) -> Vec<u8> {
+
+// ============================
+// RENDER
+// ============================
+
+fn render_frame(
+    width: u32,
+    height: u32,
+    iterations: u32,
+    zoom: f64,
+    cam_x: f64,
+    cam_y: f64,
+) -> Vec<u8> {
     let mut img = RgbImage::new(width, height);
 
-    // ✅ Fond bleu nuit
+    // Couleur du fond
     for pixel in img.pixels_mut() {
         *pixel = Rgb([12, 15, 25]);
     }
 
-    let viewport = Viewport::new(width, height, zoom);
+    let viewport = Viewport::new(width, height, zoom, cam_x, cam_y);
 
     let initial_rect = Rect {
         x: 0.0,
@@ -133,17 +151,25 @@ fn render_frame(width: u32, height: u32, iterations: u32, zoom: f64) -> Vec<u8> 
     img.into_raw()
 }
 
-// =====================
-// ✅ MAIN GRAPHIQUE ICI
-// =====================
+// ============================
+// MAIN GRAPHIQUE
+// ============================
+
 fn main() {
     let width = 800;
     let height = 800;
-    let iterations = 6;
-    let mut zoom = 1.0;
+
+    let mut zoom:f64 = 1.0;
+    let mut cam_x = 0.5;
+    let mut cam_y = 0.5;
+    let mut target_zoom = zoom; // zoom cible pour le lissage
+
+    let base_iter: i32 = 4;
+    let max_iter: i32 = 12;
+    let mut iterations: u32 = 4;
 
     let mut window = Window::new(
-        "Carré de Cantor - Temps Réel",
+        "Carré de Cantor - Fractale Temps Réel",
         width,
         height,
         WindowOptions::default(),
@@ -153,10 +179,63 @@ fn main() {
     let mut buffer = vec![0u32; width * height];
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        // ✅ Zoom fluide infini
-        zoom *= 1.01;
+        // Zoom souris 
+        if let Some((_, scroll)) = window.get_scroll_wheel() {
+            if scroll > 0.0 {
+                target_zoom *= 1.15;
+            } else if scroll < 0.0 {
+                target_zoom *= 0.87;
+            }
+        }
 
-        let frame = render_frame(width as u32, height as u32, iterations, zoom);
+        // Lissage du zoom (interpolation)
+        zoom += (target_zoom - zoom) * 0.15;
+
+        // Sécurité anti valeurs extrêmes
+        zoom = zoom.clamp(0.2, 10_000.0);
+        target_zoom = target_zoom.clamp(0.2, 10_000.0);
+
+
+        // Déplacement de la caméra au clavier
+        let speed = 0.01 / zoom; // vitesse adaptative au zoom
+
+        if window.is_key_down(Key::Up) || window.is_key_down(Key::W) {
+            cam_y -= speed;
+        }
+        if window.is_key_down(Key::Down) || window.is_key_down(Key::S) {
+            cam_y += speed;
+        }
+        if window.is_key_down(Key::Left) || window.is_key_down(Key::A) {
+            cam_x -= speed;
+        }
+        if window.is_key_down(Key::Right) || window.is_key_down(Key::D) {
+            cam_x += speed;
+        }
+
+        // Empêche la caméra de sortir du carré [0,1]
+        cam_x = cam_x.clamp(0.0, 1.0);
+        cam_y = cam_y.clamp(0.0, 1.0);
+
+        // Itérations dynamiques 
+        let zoom_log2 = zoom.log2();
+        let mut bonus = zoom_log2.floor() as i32;
+        if bonus < 0 {
+            bonus = 0;
+        }
+
+        let target_iter = (base_iter + bonus).min(max_iter);
+        iterations = target_iter as u32;
+
+        // Réinitialisation Caméra + Zoom
+        if window.is_key_pressed(Key::R, minifb::KeyRepeat::No) {
+            cam_x = 0.5;
+            cam_y = 0.5;
+            zoom = 1.0;
+            target_zoom = 1.0;
+            iterations = base_iter as u32;
+        }
+
+        let frame = render_frame(width as u32, height as u32, iterations, zoom, cam_x, cam_y);
 
         for i in 0..buffer.len() {
             let r = frame[i * 3] as u32;
