@@ -82,22 +82,46 @@ fn draw_rect(img: &mut RgbImage, rect: Rect, color: Rgb<u8>, view: &Viewport) {
 }
 
 // Génère récursivement les sous-carrés du Cantor et les dessine si visibles.
-fn generate_cantor(img: &mut RgbImage, rect: Rect, iter: u32, color: Rgb<u8>, view: &Viewport) {
+fn generate_cantor(
+    img: &mut RgbImage,
+    rect: Rect,
+    iter: u32,
+    max_iter: u32,
+    view: &Viewport
+)
+ {
     if rect.size <= 0.0 {
         return;
     }
 
     let projected_size = (rect.size / view.view_size) * view.width;
     if iter == 0 || projected_size < 1.0 {
+        let ratio = iter as f64 / max_iter as f64;
+    
+        // 🎨 Dégradé FIXE, parfait sur fond blanc
+        let r = (50.0 + 205.0 * ratio) as u8;
+        let g = (80.0 + 120.0 * (1.0 - ratio)) as u8;
+        let b = (180.0 + 50.0 * ratio) as u8;
+    
+        let color = Rgb([r, g, b]);
+        draw_rect(img, rect, color, view);
+        return;
+    }
+    
+
+    let s = rect.size / 3.0;
+    if s <= 0.0 {
+        let ratio = iter as f64 / max_iter as f64;
+
+        let r = (50.0 + 205.0 * ratio) as u8;
+        let g = (80.0 + 120.0 * (1.0 - ratio)) as u8;
+        let b = (180.0 + 50.0 * ratio) as u8;
+
+        let color = Rgb([r, g, b]);
         draw_rect(img, rect, color, view);
         return;
     }
 
-    let s = rect.size / 3.0;
-    if s <= 0.0 {
-        draw_rect(img, rect, color, view);
-        return;
-    }
 
     let offsets = [(0.0, 0.0), (2.0, 0.0), (0.0, 2.0), (2.0, 2.0)];
     for (ox, oy) in offsets {
@@ -106,7 +130,7 @@ fn generate_cantor(img: &mut RgbImage, rect: Rect, iter: u32, color: Rgb<u8>, vi
             y: rect.y + oy * s,
             size: s,
         };
-        generate_cantor(img, new_rect, iter - 1, color, view);
+        generate_cantor(img, new_rect, iter - 1, max_iter, view);
     }
 }
 
@@ -124,8 +148,7 @@ fn render_frame(width: u32, height: u32, iterations: u32, zoom: f64) -> Vec<u8> 
         size: 1.0,
     };
 
-    let color = Rgb([0, 0, 0]);
-    generate_cantor(&mut img, initial_rect, iterations, color, &viewport);
+    generate_cantor(&mut img, initial_rect, iterations, iterations, &viewport);
     img.into_raw()
 }
 
