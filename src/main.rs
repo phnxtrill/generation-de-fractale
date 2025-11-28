@@ -6,7 +6,6 @@ use std::io::BufWriter;
 
 // Paramètres d'animation : nombre de frames, progression du zoom et délai.
 const FRAME_COUNT: u32 = 40;
-const ZOOM_STEP: f64 = 0.05;
 const FRAME_DELAY_CS: u16 = 5; // 5 centi-secondes ≈ 50 ms
 
 // Carré élémentaire du Cantor exprimé dans l'espace normalisé [0, 1].
@@ -30,8 +29,11 @@ impl Viewport {
     // Construit la fenêtre à partir de la taille écran et du facteur de zoom.
     fn new(width: u32, height: u32, zoom: f64) -> Self {
         let view_size = 1.0 / zoom;
-        let vx = 0.5 - view_size / 2.0;
-        let vy = 0.5 - view_size / 2.0;
+    
+        // ✅ ZOOM VERS LE COIN HAUT-GAUCHE (0,0)
+        let vx = 0.0;
+        let vy = 0.0;
+    
         Self {
             vx,
             vy,
@@ -40,6 +42,7 @@ impl Viewport {
             height: height as f64,
         }
     }
+    
 
     // Convertit une abscisse normalisée en pixel horizontal.
     fn map_x(&self, value: f64) -> f64 {
@@ -157,16 +160,22 @@ fn main() {
 
     // Boucle d'animation : calcule le zoom, rend l'image et ajoute la frame GIF.
     for frame_idx in 0..FRAME_COUNT {
-        let zoom = 1.0 + frame_idx as f64 * ZOOM_STEP;
+        let t = frame_idx as f64 / FRAME_COUNT as f64;
+    
+        // ✅ zoom autosimilaire parfaitement loopable
+        let zoom = 3.0_f64.powf(t);
+    
         let frame_pixels = render_frame(width, height, iterations, zoom);
+    
         let mut frame = Frame::from_rgb(width as u16, height as u16, &frame_pixels);
         frame.delay = FRAME_DELAY_CS;
-        encoder
-            .write_frame(&frame)
+    
+        encoder.write_frame(&frame)
             .expect("Impossible d'ajouter une frame au GIF");
-        println!("Frame {} générée avec zoom {:.2}", frame_idx + 1, zoom);
+    
+        println!("Frame {} générée avec zoom {:.3}", frame_idx + 1, zoom);
     }
-
+    
     // Message de fin confirmant la création du GIF animé.
     println!("GIF sauvegardé dans {}", output_file);
 }
